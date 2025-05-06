@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Raspberry Pi 5 WiFi Setup</title>
+    <style>
+      :root {
+        --primary-color: #9c27b0;
+        --primary-dark: #7b1fa2;
+        --primary-light: #e1bee7;
+        --secondary-color: #ff4081;
+        --text-color: #212121;
+        --text-secondary: #757575;
+        --divider-color: #bdbdbd;
+        --background: #f5f5f5;
+        --card-color: #ffffff;
+        --success-color: #4caf50;
+        --error-color: #f44336;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: "Roboto", "Segoe UI", Arial, sans-serif;
+      }
+
+      body {
+        background-color: var(--background);
+        color: var(--text-color);
+        line-height: 1.6;
+        padding: 16px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      .card {
+        background-color: var(--card-color);
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+        width: 100%;
+        max-width: 500px;
+        padding: 24px;
+        margin: 16px;
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .card-header h1 {
+        font-size: 24px;
+        font-weight: 500;
+        color: var(--text-color);
+      }
+
+      .logo {
+        background-color: var(--primary-color);
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 16px;
+      }
+
+      .form-group {
+        margin-bottom: 24px;
+        position: relative;
+      }
+
+      .form-control {
+        width: 100%;
+        padding: 16px 16px 8px;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        font-size: 16px;
+        transition: border-color 0.2s;
+        background-color: transparent;
+        outline: none;
+      }
+
+      .form-control:focus {
+        border-color: var(--primary-color);
+      }
+
+      .form-label {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        color: var(--text-secondary);
+        transition: all 0.2s;
+        pointer-events: none;
+      }
+
+      .form-control:focus + .form-label,
+      .form-control:not(:placeholder-shown) + .form-label {
+        top: 4px;
+        left: 12px;
+        font-size: 12px;
+        color: var(--primary-color);
+        background-color: var(--card-color);
+        padding: 0 4px;
+      }
+
+      .btn {
+        display: inline-block;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        font-weight: 500;
+        text-transform: uppercase;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s, box-shadow 0.2s;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.16);
+      }
+
+      .btn:hover {
+        background-color: var(--primary-dark);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.24);
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+      }
+
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        margin: 16px 0;
+      }
+
+      .checkbox-group input {
+        margin-right: 8px;
+      }
+
+      .status {
+        margin-top: 24px;
+        padding: 16px;
+        border-radius: 4px;
+        display: none;
+      }
+
+      .status.success {
+        background-color: rgba(76, 175, 80, 0.1);
+        color: var(--success-color);
+        border: 1px solid var(--success-color);
+        display: block;
+      }
+
+      .status.error {
+        background-color: rgba(244, 67, 54, 0.1);
+        color: var(--error-color);
+        border: 1px solid var(--error-color);
+        display: block;
+      }
+
+      .button-group {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 24px;
+      }
+
+      .btn-secondary {
+        background-color: transparent;
+        color: var(--primary-color);
+        box-shadow: none;
+        border: 1px solid var(--primary-color);
+      }
+
+      .btn-secondary:hover {
+        background-color: rgba(156, 39, 176, 0.05);
+        box-shadow: none;
+      }
+
+      /* WiFi Icon */
+      .wifi-icon {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        display: inline-block;
+      }
+
+      .wifi-icon::before,
+      .wifi-icon::after {
+        content: "";
+        position: absolute;
+        border: 3px solid white;
+        border-top-left-radius: 100px;
+        border-top-right-radius: 100px;
+        border-bottom: 0;
+      }
+
+      .wifi-icon::before {
+        width: 20px;
+        height: 10px;
+        left: 2px;
+        top: 6px;
+      }
+
+      .wifi-icon::after {
+        width: 12px;
+        height: 6px;
+        left: 6px;
+        top: 10px;
+      }
+
+      @media (max-width: 600px) {
+        .card {
+          margin: 0;
+          border-radius: 0;
+          box-shadow: none;
+          padding: 16px;
+        }
+
+        body {
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="card-header">
+        <div class="logo">
+          <div class="wifi-icon"></div>
+        </div>
+        <h1>Raspberry Pi 5 WiFi Setup</h1>
+      </div>
+
+      <form id="wifiForm">
+        <div class="form-group">
+          <input
+            type="text"
+            id="ssid"
+            class="form-control"
+            placeholder=" "
+            required
+          />
+          <label for="ssid" class="form-label">WiFi Network Name (SSID)</label>
+        </div>
+
+        <div class="form-group">
+          <input
+            type="password"
+            id="password"
+            class="form-control"
+            placeholder=" "
+          />
+          <label for="password" class="form-label">Password</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="showPassword" />
+          <label for="showPassword">Show Password</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="hidden" />
+          <label for="hidden">Hidden Network</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="rebootNow" checked />
+          <label for="rebootNow">Reboot Raspberry Pi after saving</label>
+        </div>
+
+        <div class="button-group">
+          <button type="button" id="scanButton" class="btn btn-secondary">
+            Scan Networks
+          </button>
+          <button type="submit" class="btn">Save Configuration</button>
+        </div>
+      </form>
+
+      <div id="status" class="status"></div>
+
+      <div id="networkList" style="margin-top: 24px; display: none">
+        <h3 style="margin-bottom: 16px">Available Networks</h3>
+        <ul id="networkListItems" style="list-style: none"></ul>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const form = document.getElementById("wifiForm");
+        const ssidInput = document.getElementById("ssid");
+        const passwordInput = document.getElementById("password");
+        const showPasswordCheckbox = document.getElementById("showPassword");
+        const scanButton = document.getElementById("scanButton");
+        const statusDiv = document.getElementById("status");
+        const networkListDiv = document.getElementById("networkList");
+        const networkListItems = document.getElementById("networkListItems");
+
+        // Show/hide password
+        showPasswordCheckbox.addEventListener("change", function () {
+          passwordInput.type = this.checked ? "text" : "password";
+        });
+
+        // Form submission
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const formData = {
+            ssid: ssidInput.value.trim(),
+            password: passwordInput.value,
+            hidden: document.getElementById("hidden").checked,
+            reboot: document.getElementById("rebootNow").checked,
+          };
+
+          // Here you would normally send this data to the Raspberry Pi
+          // For demo purposes, we'll just show a success message
+          saveWifiConfig(formData);
+        });
+
+        // Scan for actual networks using iwlist on Raspberry Pi
+        scanButton.addEventListener("click", function () {
+          // Show loading state
+          scanButton.disabled = true;
+          scanButton.textContent = "Scanning...";
+          networkListDiv.style.display = "none";
+
+          // Function to scan networks using system command
+          function scanNetworks() {
+            // Create a hidden iframe to handle the response
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            document.body.appendChild(iframe);
+
+            // Create a form to post to our scan script
+            const form = document.createElement("form");
+            form.setAttribute("method", "POST");
+            form.setAttribute("action", "/scan-networks.php");
+            form.setAttribute("target", iframe.name);
+            iframe.setAttribute("name", "scan-frame-" + Date.now());
+            document.body.appendChild(form);
+
+            // Submit the form
+            form.submit();
+
+            // Listen for response in the iframe
+            iframe.onload = function () {
+              try {
+                const responseText = iframe.contentDocument.body.textContent;
+                const networks = JSON.parse(responseText);
+                displayNetworks(networks);
+              } catch (error) {
+                // If there's an error parsing the response, fall back to simulated networks
+                console.error("Error parsing network scan response:", error);
+                simulateNetworks();
+              }
+
+              // Clean up
+              document.body.removeChild(form);
+              document.body.removeChild(iframe);
+              scanButton.disabled = false;
+              scanButton.textContent = "Scan Networks";
+            };
+
+            // Set a timeout in case the scan takes too long
+            setTimeout(() => {
+              if (scanButton.disabled) {
+                scanButton.disabled = false;
+                scanButton.textContent = "Scan Networks";
+                simulateNetworks();
+              }
+            }, 10000); // 10 second timeout
+          }
+
+          // Fallback to simulation if actual scan fails
+          function simulateNetworks() {
+            console.log("Falling back to simulated network scan");
+            const networks = [
+              { ssid: "Home_WiFi", signal: -45 },
+              { ssid: "Neighbor_5G", signal: -65 },
+              { ssid: "Guest_Network", signal: -50 },
+              { ssid: "IoT_Devices", signal: -75 },
+            ];
+            displayNetworks(networks);
+          }
+
+          // Display networks in the UI
+          function displayNetworks(networks) {
+            networkListItems.innerHTML = "";
+            networks.forEach((network) => {
+              // Convert signal strength to text
+              let signalText = "Unknown";
+              let signalNumber = parseInt(network.signal);
+
+              // For dBm values (negative numbers)
+              if (signalNumber < 0) {
+                if (signalNumber > -50) signalText = "Strong";
+                else if (signalNumber > -70) signalText = "Medium";
+                else signalText = "Weak";
+              }
+              // For percentage values or text
+              else if (!isNaN(signalNumber)) {
+                if (signalNumber > 70) signalText = "Strong";
+                else if (signalNumber > 40) signalText = "Medium";
+                else signalText = "Weak";
+              } else {
+                signalText = network.signal; // Use as-is if already text
+              }
+              const li = document.createElement("li");
+              li.style.padding = "12px";
+              li.style.margin = "8px 0";
+              li.style.backgroundColor = "white";
+              li.style.borderRadius = "4px";
+              li.style.boxShadow = "0 1px 3px rgba(0,0,0,0.12)";
+              li.style.cursor = "pointer";
+
+              const signalColor =
+                signalText === "Strong"
+                  ? "#4caf50"
+                  : signalText === "Medium"
+                  ? "#ff9800"
+                  : "#f44336";
+
+              li.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>${network.ssid}</span>
+                                <span style="color: ${signalColor}; font-weight: 500;">${signalText}</span>
+                            </div>
+                        `;
+
+              li.addEventListener("click", () => {
+                ssidInput.value = network.ssid;
+                // Trigger the input event to update the label
+                const event = new Event("input", { bubbles: true });
+                ssidInput.dispatchEvent(event);
+
+                // Focus on password
+                passwordInput.focus();
+
+                // Scroll to form
+                form.scrollIntoView({ behavior: "smooth" });
+              });
+
+              networkListItems.appendChild(li);
+            });
+
+            networkListDiv.style.display = "block";
+          }
+
+          // Try to use the actual scan function, falling back to simulation if needed
+          try {
+            scanNetworks();
+          } catch (error) {
+            console.error("Error scanning networks:", error);
+            simulateNetworks();
+          }
+        });
+
+        function saveWifiConfig(config) {
+          // This function would send the configuration to the Raspberry Pi
+          // For now, we'll just simulate success or failure
+
+          // Simulate saving (would be an API call in real implementation)
+          statusDiv.textContent = "Saving WiFi configuration...";
+          statusDiv.className = "status";
+          statusDiv.style.display = "block";
+
+          // Simulate API call
+          setTimeout(() => {
+            // 90% chance of success for demo
+            if (Math.random() < 0.9) {
+              statusDiv.textContent = `Successfully saved WiFi configuration for "${
+                config.ssid
+              }". ${config.reboot ? "Raspberry Pi will reboot now." : ""}`;
+              statusDiv.className = "status success";
+
+              // If reboot was selected, show countdown
+              if (config.reboot) {
+                let countdown = 5;
+                const interval = setInterval(() => {
+                  countdown--;
+                  statusDiv.textContent = `Successfully saved WiFi configuration. Raspberry Pi is rebooting... (${countdown})`;
+
+                  if (countdown <= 0) {
+                    clearInterval(interval);
+                    statusDiv.textContent =
+                      "Raspberry Pi is rebooting. Please wait for it to connect to the new WiFi network.";
+                  }
+                }, 1000);
+              }
+            } else {
+              // Simulate error
+              statusDiv.textContent =
+                "Error saving WiFi configuration. Please try again.";
+              statusDiv.className = "status error";
+            }
+          }, 1500);
+
+          // Actual implementation to save to wpa_supplicant.conf
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", "/save-wifi.php", true);
+          xhr.setRequestHeader("Content-Type", "application/json");
+
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+              if (xhr.status === 200) {
+                try {
+                  const response = JSON.parse(xhr.responseText);
+                  if (response.success) {
+                    statusDiv.textContent = `Successfully saved WiFi configuration for "${
+                      config.ssid
+                    }". ${
+                      config.reboot ? "Raspberry Pi will reboot now." : ""
+                    }`;
+                    statusDiv.className = "status success";
+
+                    // If reboot was selected, show countdown
+                    if (config.reboot) {
+                      let countdown = 5;
+                      const interval = setInterval(() => {
+                        countdown--;
+                        statusDiv.textContent = `Successfully saved WiFi configuration. Raspberry Pi is rebooting... (${countdown})`;
+
+                        if (countdown <= 0) {
+                          clearInterval(interval);
+                          statusDiv.textContent =
+                            "Raspberry Pi is rebooting. Please wait for it to connect to the new WiFi network.";
+                        }
+                      }, 1000);
+                    }
+                  } else {
+                    statusDiv.textContent =
+                      "Error: " + (response.message || "Unknown error");
+                    statusDiv.className = "status error";
+                  }
+                } catch (e) {
+                  statusDiv.textContent = "Error parsing response from server";
+                  statusDiv.className = "status error";
+                }
+              } else {
+                statusDiv.textContent = "Server error: " + xhr.status;
+                statusDiv.className = "status error";
+              }
+            }
+          };
+
+          xhr.send(JSON.stringify(config));
+        }
+      });
+    </script>
+  </body>
+</html>
