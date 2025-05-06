@@ -233,6 +233,71 @@
         background-color: var(--primary-light);
       }
 
+      /* Password toggle button styles */
+      .password-container {
+        position: relative;
+      }
+
+      .password-toggle {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        z-index: 2;
+      }
+
+      .password-toggle:hover {
+        color: var(--primary-color);
+      }
+
+      /* Eye icons for password visibility */
+      .eye-icon {
+        width: 22px;
+        height: 16px;
+        position: relative;
+        display: inline-block;
+      }
+
+      .eye-icon::before {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 12px;
+        border: 2px solid currentColor;
+        border-radius: 70% 70% 0 0 / 90% 90% 0 0;
+        border-bottom: none;
+        top: 2px;
+        left: 0;
+      }
+
+      .eye-icon::after {
+        content: "";
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        background: currentColor;
+        border-radius: 50%;
+        top: 5px;
+        left: 8px;
+      }
+
+      .eye-icon.closed::after {
+        height: 2px;
+        border-radius: 0;
+        transform: rotate(45deg);
+        width: 22px;
+        top: 7px;
+        left: 0;
+      }
+
       @media (max-width: 600px) {
         .card {
           margin: 0;
@@ -268,7 +333,7 @@
           <label for="ssid" class="form-label">WiFi Network Name (SSID)</label>
         </div>
 
-        <div class="form-group">
+        <div class="form-group password-container">
           <input
             type="password"
             id="password"
@@ -276,11 +341,14 @@
             placeholder=" "
           />
           <label for="password" class="form-label">Password</label>
-        </div>
-
-        <div class="checkbox-group">
-          <input type="checkbox" id="showPassword" />
-          <label for="showPassword">Show Password</label>
+          <button
+            type="button"
+            id="passwordToggle"
+            class="password-toggle"
+            aria-label="Toggle password visibility"
+          >
+            <span class="eye-icon"></span>
+          </button>
         </div>
 
         <div class="checkbox-group">
@@ -291,6 +359,13 @@
         <div class="checkbox-group">
           <input type="checkbox" id="rebootNow" checked />
           <label for="rebootNow">Reboot Raspberry Pi after saving</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="saveCredentials" checked />
+          <label for="saveCredentials"
+            >Remember password for this network</label
+          >
         </div>
 
         <div class="button-group">
@@ -314,16 +389,72 @@
         const form = document.getElementById("wifiForm");
         const ssidInput = document.getElementById("ssid");
         const passwordInput = document.getElementById("password");
-        const showPasswordCheckbox = document.getElementById("showPassword");
+        const passwordToggle = document.getElementById("passwordToggle");
+        const passwordToggleIcon = passwordToggle.querySelector(".eye-icon");
         const scanButton = document.getElementById("scanButton");
         const statusDiv = document.getElementById("status");
         const networkListDiv = document.getElementById("networkList");
         const networkListItems = document.getElementById("networkListItems");
+        const saveCredentialsCheckbox =
+          document.getElementById("saveCredentials");
 
-        // Show/hide password
-        showPasswordCheckbox.addEventListener("change", function () {
-          passwordInput.type = this.checked ? "text" : "password";
+        // Password toggle functionality
+        passwordToggle.addEventListener("click", function () {
+          if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            passwordToggleIcon.classList.add("closed");
+          } else {
+            passwordInput.type = "password";
+            passwordToggleIcon.classList.remove("closed");
+          }
+          passwordInput.focus();
         });
+
+        // Check if SSID has a saved password
+        ssidInput.addEventListener("change", function () {
+          const ssid = ssidInput.value.trim();
+          if (ssid) {
+            checkSavedPassword(ssid);
+          }
+        });
+
+        // Check for saved password
+        function checkSavedPassword(ssid) {
+          const xhr = new XMLHttpRequest();
+          xhr.open(
+            "GET",
+            `get-saved-password.php?ssid=${encodeURIComponent(ssid)}`,
+            true
+          );
+
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+              try {
+                const response = JSON.parse(xhr.responseText);
+                if (response.success && response.password) {
+                  passwordInput.value = response.password;
+                  // Trigger input event to update the label
+                  const event = new Event("input", { bubbles: true });
+                  passwordInput.dispatchEvent(event);
+
+                  statusDiv.textContent =
+                    "Loaded saved password for this network";
+                  statusDiv.className = "status success";
+                  statusDiv.style.display = "block";
+
+                  // Hide the message after 3 seconds
+                  setTimeout(() => {
+                    statusDiv.style.display = "none";
+                  }, 3000);
+                }
+              } catch (e) {
+                console.error("Error parsing saved password response:", e);
+              }
+            }
+          };
+
+          xhr.send();
+        }
 
         // Form submission
         form.addEventListener("submit", function (e) {
@@ -334,10 +465,9 @@
             password: passwordInput.value,
             hidden: document.getElementById("hidden").checked,
             reboot: document.getElementById("rebootNow").checked,
+            saveCredentials: saveCredentialsCheckbox.checked,
           };
 
-          // Here you would normally send this data to the Raspberry Pi
-          // For demo purposes, we'll just show a success message
           saveWifiConfig(formData);
         });
 
@@ -485,6 +615,9 @@
                 const event = new Event("input", { bubbles: true });
                 ssidInput.dispatchEvent(event);
 
+                // Try to get the saved password
+                checkSavedPassword(network.ssid);
+
                 // Focus on password
                 passwordInput.focus();
 
@@ -513,7 +646,7 @@
           statusDiv.className = "status";
           statusDiv.style.display = "block";
 
-          // Actual implementation to save to wpa_supplicant.conf
+          // Actual implementation to save to NetworkManager
           const xhr = new XMLHttpRequest();
           xhr.open("POST", "save-wifi.php", true);
           xhr.setRequestHeader("Content-Type", "application/json");

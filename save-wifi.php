@@ -1,16 +1,10 @@
 <?php
-// save-wifi.php - Script to save WiFi credentials to NetworkManager
+// save-wifi.php - Script to save WiFi credentials to NetworkManager and store passwords
 header('Content-Type: application/json');
 // Add CORS headers to allow access from different origins
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
-
-// Debug log function
-function debug_log($message) {
-    // Uncomment to enable debugging to a file
-    // file_put_contents('/tmp/wifi-debug.log', date('Y-m-d H:i:s') . ': ' . $message . "\n", FILE_APPEND);
-}
 
 // Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -38,6 +32,10 @@ $ssid = $data['ssid'];
 $password = isset($data['password']) ? $data['password'] : '';
 $hidden = isset($data['hidden']) && $data['hidden'] ? 'yes' : 'no';
 $reboot = isset($data['reboot']) && $data['reboot'];
+$saveCredentials = isset($data['saveCredentials']) ? $data['saveCredentials'] : true;
+
+// Define the file to store WiFi passwords
+$passwordFile = '/etc/rpi-wifi-passwords.json';
 
 // Create NetworkManager connection
 try {
@@ -55,7 +53,6 @@ try {
     $connection_name_escaped = escapeshellarg($connection_name);
     
     // Delete existing connection with same name to avoid duplicates
-    debug_log("Deleting any existing connection: $connection_name");
     exec("sudo nmcli connection delete $connection_name_escaped 2>/dev/null");
     
     // Build the nmcli command
@@ -73,12 +70,9 @@ try {
         $cmd .= " wifi.hidden yes";
     }
     
-    debug_log("Running command: $cmd");
-    
     // Execute command with full output capture
     exec($cmd . " 2>&1", $output, $return_var);
     $output_text = implode("\n", $output);
-    debug_log("Command output: $output_text");
     
     if ($return_var !== 0) {
         echo json_encode([
@@ -88,15 +82,17 @@ try {
         exit;
     }
     
+    // Save the password if requested
+    if ($saveCredentials && !empty($password)) {
+        saveWifiPassword($ssid, $password, $passwordFile);
+    }
+    
     // Try to connect to the new network immediately
-    debug_log("Connecting to network: $connection_name");
     exec("sudo nmcli connection up $connection_name_escaped 2>&1", $connect_output, $connect_return);
     $connect_output_text = implode("\n", $connect_output);
-    debug_log("Connection attempt output: $connect_output_text");
     
     // If reboot is requested, schedule a reboot
     if ($reboot) {
-        debug_log("Scheduling reboot");
         // Use nohup to ensure the reboot happens even if the HTTP connection is closed
         exec('nohup sudo /bin/sh -c "sleep 5 && reboot" > /dev/null 2>&1 &');
     }
@@ -105,11 +101,44 @@ try {
         'success' => true,
         'details' => [
             'connection_name' => $connection_name,
-            'connection_result' => ($connect_return === 0) ? 'Connected successfully' : $connect_output_text
+            'connection_result' => ($connect_return === 0) ? 'Connected successfully' : $connect_output_text,
+            'password_saved' => $saveCredentials && !empty($password)
         ]
     ]);
 } catch (Exception $e) {
-    debug_log("Exception: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}
+
+/**
+ * Save WiFi password to the password storage file
+ * 
+ * @param string $ssid The SSID of the network
+ * @param string $password The password to save
+ * @param string $file The file path to store passwords
+ * @return bool Success status
+ */
+function saveWifiPassword($ssid, $password, $file) {
+    // Read existing passwords
+    $passwords = [];
+    if (file_exists($file)) {
+        $jsonContent = file_get_contents($file);
+        if ($jsonContent) {
+            $passwords = json_decode($jsonContent, true) ?: [];
+        }
+    }
+    
+    // Update password for this SSID
+    $passwords[$ssid] = $password;
+    
+    // Write back to file
+    $success = file_put_contents($file, json_encode($passwords, JSON_PRETTY_PRINT));
+    
+    // Set proper permissions for security
+    if ($success) {
+        chmod($file, 0600); // Only readable/writable by owner
+        exec("sudo chown root:root " . escapeshellarg($file));
+    }
+    
+    return $success !== false;
 }
 ?>
