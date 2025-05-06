@@ -1,5 +1,5 @@
 <?php
-// save-wifi.php - Script to save WiFi credentials to wpa_supplicant.conf and optionally reboot
+// save-wifi.php - Script to save WiFi credentials to NetworkManager
 header('Content-Type: application/json');
 // Add CORS headers to allow access from different origins
 header('Access-Control-Allow-Origin: *');
@@ -30,60 +30,46 @@ if (!isset($data['ssid']) || empty($data['ssid'])) {
 // Get values from input
 $ssid = $data['ssid'];
 $password = isset($data['password']) ? $data['password'] : '';
-$hidden = isset($data['hidden']) && $data['hidden'] ? 1 : 0;
+$hidden = isset($data['hidden']) && $data['hidden'] ? 'yes' : 'no';
 $reboot = isset($data['reboot']) && $data['reboot'];
 
-// Create wpa_supplicant configuration
-function generateWpaConfig($ssid, $password, $hidden) {
-    $config = "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n";
-    $config .= "update_config=1\n";
-    $config .= "country=US\n\n"; // Change country code if needed
+// Create NetworkManager connection
+try {
+    $uuid = uniqid("wifi-");
+    $connection_name = "WiFi-" . preg_replace('/[^a-zA-Z0-9]/', '-', $ssid);
     
-    $config .= "network={\n";
-    $config .= "\tssid=\"" . addslashes($ssid) . "\"\n";
-    
-    if ($hidden) {
-        $config .= "\tscan_ssid=1\n";
-    }
-    
+    // Build nmcli command
     if (!empty($password)) {
-        // Use WPA-PSK for networks with passwords
-        $config .= "\tpsk=\"" . addslashes($password) . "\"\n";
-        $config .= "\tkey_mgmt=WPA-PSK\n";
+        // For secured networks
+        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name '$connection_name' autoconnect yes ssid '$ssid' wifi-sec.key-mgmt wpa-psk wifi-sec.psk '$password'";
     } else {
         // For open networks
-        $config .= "\tkey_mgmt=NONE\n";
+        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name '$connection_name' autoconnect yes ssid '$ssid'";
     }
     
-    $config .= "}\n";
+    // Add hidden network setting if needed
+    if ($hidden === 'yes') {
+        $cmd .= " wifi.hidden $hidden";
+    }
     
-    return $config;
-}
-
-// Save configuration to file
-try {
-    $config = generateWpaConfig($ssid, $password, $hidden);
+    // Delete existing connection with same name to avoid duplicates
+    exec("sudo nmcli connection delete '$connection_name' 2>/dev/null");
     
-    // Save to a temporary file first
-    $tmp_file = tempnam('/tmp', 'wpa_');
-    file_put_contents($tmp_file, $config);
-    
-    // Move to the actual location (requires sudo)
-    exec("sudo cp $tmp_file /etc/wpa_supplicant/wpa_supplicant.conf", $output, $return_var);
-    unlink($tmp_file); // Remove temporary file
+    // Execute command to create connection
+    exec($cmd, $output, $return_var);
     
     if ($return_var !== 0) {
-        echo json_encode(['success' => false, 'message' => 'Failed to save configuration']);
+        echo json_encode(['success' => false, 'message' => 'Failed to create NetworkManager connection']);
         exit;
     }
+    
+    // Try to connect to the new network immediately
+    exec("sudo nmcli connection up '$connection_name'", $connect_output, $connect_return);
     
     // If reboot is requested, schedule a reboot
     if ($reboot) {
         // Use nohup to ensure the reboot happens even if the HTTP connection is closed
         exec('nohup sudo /bin/sh -c "sleep 5 && reboot" > /dev/null 2>&1 &');
-    } else {
-        // Otherwise just restart the wireless interface
-        exec('sudo wpa_cli -i wlan0 reconfigure', $output, $return_var);
     }
     
     echo json_encode(['success' => true]);
