@@ -68,15 +68,6 @@ function scanWifiNetworks() {
     
     return $networks;
 }
-}
-    
-    // Sort networks by signal strength (strongest first)
-    usort($networks, function ($a, $b) {
-        return $b['signal'] <=> $a['signal'];
-    });
-    
-    return $networks;
-}
 
 // Get the networks
 $networks = scanWifiNetworks();

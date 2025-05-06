@@ -332,9 +332,11 @@
           networkListDiv.style.display = "none";
 
           // Function to scan networks using XHR GET request
+          // Modified scan networks function for better error handling
           function scanNetworks() {
             const xhr = new XMLHttpRequest();
             xhr.open("GET", "scan-networks.php", true);
+            xhr.setRequestHeader("Accept", "application/json");
 
             xhr.onreadystatechange = function () {
               if (xhr.readyState === 4) {
@@ -343,12 +345,27 @@
 
                 if (xhr.status === 200) {
                   try {
+                    // Check if the response starts with <?php (indicating PHP isn't executing)
+                    if (xhr.responseText.trim().startsWith("<?php")) {
+                      console.error(
+                        "PHP is not executing properly. Raw PHP code returned."
+                      );
+                      statusDiv.textContent =
+                        "Error: Server not configured to process PHP files";
+                      statusDiv.className = "status error";
+                      statusDiv.style.display = "block";
+                      simulateNetworks();
+                      return;
+                    }
+
                     const networks = JSON.parse(xhr.responseText);
                     if (networks && networks.length > 0) {
                       displayNetworks(networks);
                     } else {
-                      // If no networks found, show message and fall back to simulation
                       console.log("No networks found, using simulated data");
+                      statusDiv.textContent = "No WiFi networks found";
+                      statusDiv.className = "status";
+                      statusDiv.style.display = "block";
                       simulateNetworks();
                     }
                   } catch (error) {
@@ -356,10 +373,17 @@
                       "Error parsing network scan response:",
                       error
                     );
+                    console.error("Raw response:", xhr.responseText);
+                    statusDiv.textContent = "Error parsing server response";
+                    statusDiv.className = "status error";
+                    statusDiv.style.display = "block";
                     simulateNetworks();
                   }
                 } else {
                   console.error("Error scanning networks, status:", xhr.status);
+                  statusDiv.textContent = "Server error: " + xhr.status;
+                  statusDiv.className = "status error";
+                  statusDiv.style.display = "block";
                   simulateNetworks();
                 }
               }
@@ -369,6 +393,9 @@
               console.error("Network error during scan");
               scanButton.disabled = false;
               scanButton.textContent = "Scan Networks";
+              statusDiv.textContent = "Network error during scan";
+              statusDiv.className = "status error";
+              statusDiv.style.display = "block";
               simulateNetworks();
             };
 
@@ -377,6 +404,9 @@
               console.error("Network scan timed out");
               scanButton.disabled = false;
               scanButton.textContent = "Scan Networks";
+              statusDiv.textContent = "Network scan timed out";
+              statusDiv.className = "status error";
+              statusDiv.style.display = "block";
               simulateNetworks();
             };
 
