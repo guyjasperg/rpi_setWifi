@@ -6,6 +6,12 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
+// Debug log function
+function debug_log($message) {
+    // Uncomment to enable debugging to a file
+    // file_put_contents('/tmp/wifi-debug.log', date('Y-m-d H:i:s') . ': ' . $message . "\n", FILE_APPEND);
+}
+
 // Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
@@ -35,45 +41,75 @@ $reboot = isset($data['reboot']) && $data['reboot'];
 
 // Create NetworkManager connection
 try {
-    $uuid = uniqid("wifi-");
-    $connection_name = "WiFi-" . preg_replace('/[^a-zA-Z0-9]/', '-', $ssid);
+    // Check if NetworkManager is installed and running
+    exec("which nmcli", $which_output, $which_return);
+    if ($which_return !== 0) {
+        echo json_encode(['success' => false, 'message' => 'NetworkManager (nmcli) not found']);
+        exit;
+    }
     
-    // Build nmcli command
+    // Properly escape values for shell commands
+    $ssid_escaped = escapeshellarg($ssid);
+    $password_escaped = escapeshellarg($password);
+    $connection_name = "WiFi-" . preg_replace('/[^a-zA-Z0-9]/', '-', $ssid);
+    $connection_name_escaped = escapeshellarg($connection_name);
+    
+    // Delete existing connection with same name to avoid duplicates
+    debug_log("Deleting any existing connection: $connection_name");
+    exec("sudo nmcli connection delete $connection_name_escaped 2>/dev/null");
+    
+    // Build the nmcli command
     if (!empty($password)) {
         // For secured networks
-        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name '$connection_name' autoconnect yes ssid '$ssid' wifi-sec.key-mgmt wpa-psk wifi-sec.psk '$password'";
+        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name $connection_name_escaped autoconnect yes ssid $ssid_escaped";
+        $cmd .= " wifi-sec.key-mgmt wpa-psk wifi-sec.psk $password_escaped";
     } else {
         // For open networks
-        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name '$connection_name' autoconnect yes ssid '$ssid'";
+        $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name $connection_name_escaped autoconnect yes ssid $ssid_escaped";
     }
     
     // Add hidden network setting if needed
     if ($hidden === 'yes') {
-        $cmd .= " wifi.hidden $hidden";
+        $cmd .= " wifi.hidden yes";
     }
     
-    // Delete existing connection with same name to avoid duplicates
-    exec("sudo nmcli connection delete '$connection_name' 2>/dev/null");
+    debug_log("Running command: $cmd");
     
-    // Execute command to create connection
-    exec($cmd, $output, $return_var);
+    // Execute command with full output capture
+    exec($cmd . " 2>&1", $output, $return_var);
+    $output_text = implode("\n", $output);
+    debug_log("Command output: $output_text");
     
     if ($return_var !== 0) {
-        echo json_encode(['success' => false, 'message' => 'Failed to create NetworkManager connection']);
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Failed to create NetworkManager connection: ' . $output_text
+        ]);
         exit;
     }
     
     // Try to connect to the new network immediately
-    exec("sudo nmcli connection up '$connection_name'", $connect_output, $connect_return);
+    debug_log("Connecting to network: $connection_name");
+    exec("sudo nmcli connection up $connection_name_escaped 2>&1", $connect_output, $connect_return);
+    $connect_output_text = implode("\n", $connect_output);
+    debug_log("Connection attempt output: $connect_output_text");
     
     // If reboot is requested, schedule a reboot
     if ($reboot) {
+        debug_log("Scheduling reboot");
         // Use nohup to ensure the reboot happens even if the HTTP connection is closed
         exec('nohup sudo /bin/sh -c "sleep 5 && reboot" > /dev/null 2>&1 &');
     }
     
-    echo json_encode(['success' => true]);
+    echo json_encode([
+        'success' => true,
+        'details' => [
+            'connection_name' => $connection_name,
+            'connection_result' => ($connect_return === 0) ? 'Connected successfully' : $connect_output_text
+        ]
+    ]);
 } catch (Exception $e) {
+    debug_log("Exception: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 ?>
