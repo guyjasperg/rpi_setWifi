@@ -358,7 +358,9 @@
 
         <div class="checkbox-group">
           <input type="checkbox" id="rebootNow" checked />
-          <label for="rebootNow">Reboot Raspberry Pi after saving</label>
+          <label for="rebootNow"
+            >Reboot Raspberry Pi to apply changes immediately</label
+          >
         </div>
 
         <div class="checkbox-group">
@@ -657,11 +659,18 @@
                 try {
                   const response = JSON.parse(xhr.responseText);
                   if (response.success) {
-                    statusDiv.textContent = `Successfully saved WiFi configuration for "${
-                      config.ssid
-                    }". ${
-                      config.reboot ? "Raspberry Pi will reboot now." : ""
-                    }`;
+                    // Display the message from the server if available
+                    if (response.details && response.details.message) {
+                      statusDiv.textContent = response.details.message;
+                    } else {
+                      statusDiv.textContent = `Successfully saved WiFi configuration for "${
+                        config.ssid
+                      }". ${
+                        config.reboot
+                          ? "Raspberry Pi will reboot to apply changes."
+                          : "Changes will be applied after reboot."
+                      }`;
+                    }
                     statusDiv.className = "status success";
 
                     // If reboot was selected, show countdown
@@ -669,7 +678,7 @@
                       let countdown = 5;
                       const interval = setInterval(() => {
                         countdown--;
-                        statusDiv.textContent = `Successfully saved WiFi configuration. Raspberry Pi is rebooting... (${countdown})`;
+                        statusDiv.textContent = `WiFi configuration saved. Raspberry Pi is rebooting to apply changes... (${countdown})`;
 
                         if (countdown <= 0) {
                           clearInterval(interval);

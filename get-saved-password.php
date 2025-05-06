@@ -30,18 +30,34 @@ $passwordFile = '/etc/rpi-wifi-passwords.json';
 function getSavedPassword($ssid, $file) {
     // Check if password file exists
     if (!file_exists($file)) {
+        // Log the issue for debugging
+        error_log("Password file does not exist: $file");
         return null;
     }
     
-    // Read the password file
-    $jsonContent = file_get_contents($file);
-    if (!$jsonContent) {
-        return null;
+    // Check if file is readable
+    if (!is_readable($file)) {
+        error_log("Password file is not readable: $file");
+        
+        // Try to read with sudo if web server can't read it directly
+        exec("sudo cat " . escapeshellarg($file) . " 2>/dev/null", $output, $return_var);
+        if ($return_var === 0 && !empty($output)) {
+            $jsonContent = implode("\n", $output);
+        } else {
+            return null;
+        }
+    } else {
+        // Read the password file normally
+        $jsonContent = file_get_contents($file);
+        if (!$jsonContent) {
+            return null;
+        }
     }
     
     // Parse JSON content
     $passwords = json_decode($jsonContent, true);
     if (!$passwords || !is_array($passwords)) {
+        error_log("Failed to parse password file as JSON");
         return null;
     }
     

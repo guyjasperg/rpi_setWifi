@@ -87,9 +87,9 @@ try {
         saveWifiPassword($ssid, $password, $passwordFile);
     }
     
-    // Try to connect to the new network immediately
-    exec("sudo nmcli connection up $connection_name_escaped 2>&1", $connect_output, $connect_return);
-    $connect_output_text = implode("\n", $connect_output);
+    // Do not connect immediately - changes will be applied after reboot
+    $connect_output_text = "WiFi configuration saved. Changes will be applied after reboot.";
+    $connect_return = 0;
     
     // If reboot is requested, schedule a reboot
     if ($reboot) {
@@ -101,8 +101,11 @@ try {
         'success' => true,
         'details' => [
             'connection_name' => $connection_name,
-            'connection_result' => ($connect_return === 0) ? 'Connected successfully' : $connect_output_text,
-            'password_saved' => $saveCredentials && !empty($password)
+            'connection_result' => $connect_output_text,
+            'password_saved' => $saveCredentials && !empty($password),
+            'message' => $reboot ? 
+                'WiFi configuration saved. Your Raspberry Pi will reboot to apply changes.' : 
+                'WiFi configuration saved. Changes will be applied after next reboot.'
         ]
     ]);
 } catch (Exception $e) {
@@ -129,6 +132,15 @@ function saveWifiPassword($ssid, $password, $file) {
     
     // Update password for this SSID
     $passwords[$ssid] = $password;
+    
+    // Create directory if it doesn't exist
+    $directory = dirname($file);
+    if (!is_dir($directory)) {
+        // If file is directly in /etc, we don't need to create the directory
+        if ($directory !== '/etc') {
+            mkdir($directory, 0755, true);
+        }
+    }
     
     // Write back to file
     $success = file_put_contents($file, json_encode($passwords, JSON_PRETTY_PRINT));
