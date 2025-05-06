@@ -1,6 +1,21 @@
 <?php
 // save-wifi.php - Script to save WiFi credentials to wpa_supplicant.conf and optionally reboot
 header('Content-Type: application/json');
+// Add CORS headers to allow access from different origins
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit(0);
+}
+
+// Only accept POST requests
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'message' => 'Only POST method is allowed']);
+    exit;
+}
 
 // Get JSON input
 $input = file_get_contents('php://input');

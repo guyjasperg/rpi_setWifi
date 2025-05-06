@@ -331,51 +331,56 @@
           scanButton.textContent = "Scanning...";
           networkListDiv.style.display = "none";
 
-          // Function to scan networks using system command
+          // Function to scan networks using XHR GET request
           function scanNetworks() {
-            // Create a hidden iframe to handle the response
-            const iframe = document.createElement("iframe");
-            iframe.style.display = "none";
-            document.body.appendChild(iframe);
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", "scan-networks.php", true);
 
-            // Create a form to post to our scan script
-            const form = document.createElement("form");
-            form.setAttribute("method", "POST");
-            form.setAttribute("action", "/scan-networks.php");
-            form.setAttribute("target", iframe.name);
-            iframe.setAttribute("name", "scan-frame-" + Date.now());
-            document.body.appendChild(form);
-
-            // Submit the form
-            form.submit();
-
-            // Listen for response in the iframe
-            iframe.onload = function () {
-              try {
-                const responseText = iframe.contentDocument.body.textContent;
-                const networks = JSON.parse(responseText);
-                displayNetworks(networks);
-              } catch (error) {
-                // If there's an error parsing the response, fall back to simulated networks
-                console.error("Error parsing network scan response:", error);
-                simulateNetworks();
-              }
-
-              // Clean up
-              document.body.removeChild(form);
-              document.body.removeChild(iframe);
-              scanButton.disabled = false;
-              scanButton.textContent = "Scan Networks";
-            };
-
-            // Set a timeout in case the scan takes too long
-            setTimeout(() => {
-              if (scanButton.disabled) {
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState === 4) {
                 scanButton.disabled = false;
                 scanButton.textContent = "Scan Networks";
-                simulateNetworks();
+
+                if (xhr.status === 200) {
+                  try {
+                    const networks = JSON.parse(xhr.responseText);
+                    if (networks && networks.length > 0) {
+                      displayNetworks(networks);
+                    } else {
+                      // If no networks found, show message and fall back to simulation
+                      console.log("No networks found, using simulated data");
+                      simulateNetworks();
+                    }
+                  } catch (error) {
+                    console.error(
+                      "Error parsing network scan response:",
+                      error
+                    );
+                    simulateNetworks();
+                  }
+                } else {
+                  console.error("Error scanning networks, status:", xhr.status);
+                  simulateNetworks();
+                }
               }
-            }, 10000); // 10 second timeout
+            };
+
+            xhr.onerror = function () {
+              console.error("Network error during scan");
+              scanButton.disabled = false;
+              scanButton.textContent = "Scan Networks";
+              simulateNetworks();
+            };
+
+            xhr.timeout = 10000; // 10 second timeout
+            xhr.ontimeout = function () {
+              console.error("Network scan timed out");
+              scanButton.disabled = false;
+              scanButton.textContent = "Scan Networks";
+              simulateNetworks();
+            };
+
+            xhr.send();
           }
 
           // Fallback to simulation if actual scan fails
@@ -463,48 +468,14 @@
         });
 
         function saveWifiConfig(config) {
-          // This function would send the configuration to the Raspberry Pi
-          // For now, we'll just simulate success or failure
-
-          // Simulate saving (would be an API call in real implementation)
+          // This function sends the configuration to the Raspberry Pi
           statusDiv.textContent = "Saving WiFi configuration...";
           statusDiv.className = "status";
           statusDiv.style.display = "block";
 
-          // Simulate API call
-          setTimeout(() => {
-            // 90% chance of success for demo
-            if (Math.random() < 0.9) {
-              statusDiv.textContent = `Successfully saved WiFi configuration for "${
-                config.ssid
-              }". ${config.reboot ? "Raspberry Pi will reboot now." : ""}`;
-              statusDiv.className = "status success";
-
-              // If reboot was selected, show countdown
-              if (config.reboot) {
-                let countdown = 5;
-                const interval = setInterval(() => {
-                  countdown--;
-                  statusDiv.textContent = `Successfully saved WiFi configuration. Raspberry Pi is rebooting... (${countdown})`;
-
-                  if (countdown <= 0) {
-                    clearInterval(interval);
-                    statusDiv.textContent =
-                      "Raspberry Pi is rebooting. Please wait for it to connect to the new WiFi network.";
-                  }
-                }, 1000);
-              }
-            } else {
-              // Simulate error
-              statusDiv.textContent =
-                "Error saving WiFi configuration. Please try again.";
-              statusDiv.className = "status error";
-            }
-          }, 1500);
-
           // Actual implementation to save to wpa_supplicant.conf
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", "/save-wifi.php", true);
+          xhr.open("POST", "save-wifi.php", true);
           xhr.setRequestHeader("Content-Type", "application/json");
 
           xhr.onreadystatechange = function () {
@@ -542,12 +513,20 @@
                 } catch (e) {
                   statusDiv.textContent = "Error parsing response from server";
                   statusDiv.className = "status error";
+                  console.error("Response parse error:", e, xhr.responseText);
                 }
               } else {
                 statusDiv.textContent = "Server error: " + xhr.status;
                 statusDiv.className = "status error";
+                console.error("Server error:", xhr.status, xhr.responseText);
               }
             }
+          };
+
+          xhr.onerror = function () {
+            statusDiv.textContent = "Network error while saving configuration";
+            statusDiv.className = "status error";
+            console.error("Network error while saving");
           };
 
           xhr.send(JSON.stringify(config));
