@@ -397,7 +397,8 @@
           document.getElementById("saveCredentials");
 
         // Password toggle functionality
-        passwordToggle.addEventListener("click", function () {
+        passwordToggle.addEventListener("click", function (e) {
+          e.preventDefault();
           if (passwordInput.type === "password") {
             passwordInput.type = "text";
             passwordToggleIcon.classList.add("closed");
@@ -469,6 +470,7 @@
         // Form submission
         form.addEventListener("submit", function (e) {
           e.preventDefault();
+          console.log("Form submitted");
 
           const formData = {
             ssid: ssidInput.value.trim(),
@@ -482,18 +484,22 @@
         });
 
         // Scan for actual networks using iwlist on Raspberry Pi
-        scanButton.addEventListener("click", function () {
+        function handleScanButtonClick(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("Scan button clicked, initiating network scan");
+
           // Show loading state
           scanButton.disabled = true;
           scanButton.textContent = "Scanning...";
           networkListDiv.style.display = "none";
-          networkListItems.innerHTML = ""; // Clear any previous content
-          console.log("Network scan initiated");
+          networkListItems.innerHTML = "";
+          statusDiv.style.display = "none";
 
           // Function to scan networks using XHR GET request
           function scanNetworks() {
             const xhr = new XMLHttpRequest();
-            xhr.open("GET", "scan-networks.php", true);
+            xhr.open("GET", "./scan-networks.php", true); // Use relative path
             xhr.setRequestHeader("Accept", "application/json");
 
             xhr.onreadystatechange = function () {
@@ -509,14 +515,12 @@
 
                 if (xhr.status === 200) {
                   try {
-                    // Check for non-JSON content (e.g., PHP errors)
+                    // Check for non-JSON content
                     if (
                       xhr.responseText.trim().startsWith("<?php") ||
                       xhr.responseText.trim().startsWith("<!DOCTYPE")
                     ) {
-                      console.error(
-                        "Server returned non-JSON content (likely PHP or HTML)"
-                      );
+                      console.error("Server returned non-JSON content");
                       statusDiv.textContent =
                         "Error: Server not configured to process PHP correctly";
                       statusDiv.className = "status error";
@@ -534,9 +538,7 @@
                     ) {
                       displayNetworks(networks);
                     } else {
-                      console.log(
-                        "No valid networks found, falling back to simulation"
-                      );
+                      console.log("No valid networks found, simulating");
                       statusDiv.textContent = "No WiFi networks found";
                       statusDiv.className = "status";
                       statusDiv.style.display = "block";
@@ -580,7 +582,7 @@
               simulateNetworks();
             };
 
-            xhr.timeout = 10000; // 10 second timeout
+            xhr.timeout = 10000;
             xhr.ontimeout = function () {
               console.error("Network scan timed out");
               scanButton.disabled = false;
@@ -591,7 +593,7 @@
               simulateNetworks();
             };
 
-            console.log("Sending scan request to scan-networks.php");
+            console.log("Sending scan request to ./scan-networks.php");
             xhr.send();
           }
 
@@ -610,7 +612,7 @@
           // Display networks in the UI
           function displayNetworks(networks) {
             console.log("Attempting to display networks:", networks);
-            networkListItems.innerHTML = ""; // Ensure clean slate
+            networkListItems.innerHTML = "";
             if (!Array.isArray(networks)) {
               console.error("Invalid networks data, not an array:", networks);
               statusDiv.textContent = "Invalid network data received";
@@ -637,17 +639,14 @@
                 return;
               }
 
-              // Convert signal strength to text
               let signalText = "Unknown";
               let signalNumber = parseInt(network.signal);
-
-              // Handle percentage values (as seen in your JSON)
               if (!isNaN(signalNumber)) {
                 if (signalNumber > 70) signalText = "Strong";
                 else if (signalNumber > 40) signalText = "Medium";
                 else signalText = "Weak";
               } else {
-                signalText = network.signal; // Use as-is if not numeric
+                signalText = network.signal;
               }
 
               const signalColor =
@@ -667,18 +666,11 @@
 
               li.addEventListener("click", () => {
                 ssidInput.value = network.ssid;
-                // Trigger the input event to update the label
                 const event = new Event("input", { bubbles: true });
                 ssidInput.dispatchEvent(event);
-
-                // Trigger change event to check saved password
                 const changeEvent = new Event("change", { bubbles: true });
                 ssidInput.dispatchEvent(changeEvent);
-
-                // Focus on password
                 passwordInput.focus();
-
-                // Scroll to form
                 form.scrollIntoView({ behavior: "smooth" });
               });
 
@@ -689,7 +681,6 @@
             console.log("Network list rendered with", networks.length, "items");
           }
 
-          // Start the scan
           try {
             scanNetworks();
           } catch (error) {
@@ -699,7 +690,11 @@
             statusDiv.style.display = "block";
             simulateNetworks();
           }
-        });
+        }
+
+        // Attach click and touchstart handlers for scan button
+        scanButton.addEventListener("click", handleScanButtonClick);
+        scanButton.addEventListener("touchstart", handleScanButtonClick);
 
         function saveWifiConfig(config) {
           console.log("Saving WiFi config:", config);
@@ -708,7 +703,7 @@
           statusDiv.style.display = "block";
 
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", "save-wifi.php", true);
+          xhr.open("POST", "./save-wifi.php", true);
           xhr.setRequestHeader("Content-Type", "application/json");
 
           xhr.onreadystatechange = function () {
