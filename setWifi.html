@@ -418,6 +418,7 @@
 
         // Check for saved password
         function checkSavedPassword(ssid) {
+          console.log("Checking saved password for SSID:", ssid);
           const xhr = new XMLHttpRequest();
           xhr.open(
             "GET",
@@ -429,6 +430,7 @@
             if (xhr.readyState === 4 && xhr.status === 200) {
               try {
                 const response = JSON.parse(xhr.responseText);
+                console.log("Saved password response:", response);
                 if (response.success && response.password) {
                   passwordInput.value = response.password;
                   // Trigger input event to update the label
@@ -485,31 +487,38 @@
           scanButton.disabled = true;
           scanButton.textContent = "Scanning...";
           networkListDiv.style.display = "none";
+          networkListItems.innerHTML = ""; // Clear any previous content
+          console.log("Network scan initiated");
 
           // Function to scan networks using XHR GET request
           function scanNetworks() {
-            console.log("Initiating network scan...");
             const xhr = new XMLHttpRequest();
             xhr.open("GET", "scan-networks.php", true);
+            xhr.setRequestHeader("Accept", "application/json");
 
             xhr.onreadystatechange = function () {
               if (xhr.readyState === 4) {
                 scanButton.disabled = false;
                 scanButton.textContent = "Scan Networks";
+                console.log(
+                  "Scan response received, status:",
+                  xhr.status,
+                  "Response:",
+                  xhr.responseText
+                );
 
                 if (xhr.status === 200) {
-                  console.log(
-                    "Received response from scan-networks.php:",
-                    xhr.responseText
-                  );
                   try {
-                    // Check if the response starts with <?php (indicating PHP isn't executing)
-                    if (xhr.responseText.trim().startsWith("<?php")) {
+                    // Check for non-JSON content (e.g., PHP errors)
+                    if (
+                      xhr.responseText.trim().startsWith("<?php") ||
+                      xhr.responseText.trim().startsWith("<!DOCTYPE")
+                    ) {
                       console.error(
-                        "PHP is not executing properly. Raw PHP code returned."
+                        "Server returned non-JSON content (likely PHP or HTML)"
                       );
                       statusDiv.textContent =
-                        "Error: Server not configured to process PHP files";
+                        "Error: Server not configured to process PHP correctly";
                       statusDiv.className = "status error";
                       statusDiv.style.display = "block";
                       simulateNetworks();
@@ -526,7 +535,7 @@
                       displayNetworks(networks);
                     } else {
                       console.log(
-                        "No networks found or invalid response, using simulated data"
+                        "No valid networks found, falling back to simulation"
                       );
                       statusDiv.textContent = "No WiFi networks found";
                       statusDiv.className = "status";
@@ -535,7 +544,7 @@
                     }
                   } catch (error) {
                     console.error(
-                      "Error parsing network scan response:",
+                      "Error parsing scan response:",
                       error,
                       "Raw response:",
                       xhr.responseText
@@ -548,7 +557,7 @@
                   }
                 } else {
                   console.error(
-                    "Error scanning networks, status:",
+                    "Scan request failed, status:",
                     xhr.status,
                     "Response:",
                     xhr.responseText
@@ -582,12 +591,13 @@
               simulateNetworks();
             };
 
+            console.log("Sending scan request to scan-networks.php");
             xhr.send();
           }
 
           // Fallback to simulation if actual scan fails
           function simulateNetworks() {
-            console.log("Falling back to simulated network scan");
+            console.log("Using simulated network data");
             const networks = [
               { ssid: "Home_WiFi", signal: -45 },
               { ssid: "Neighbor_5G", signal: -65 },
@@ -599,19 +609,31 @@
 
           // Display networks in the UI
           function displayNetworks(networks) {
-            console.log("Displaying networks:", networks);
-            networkListItems.innerHTML = "";
+            console.log("Attempting to display networks:", networks);
+            networkListItems.innerHTML = ""; // Ensure clean slate
             if (!Array.isArray(networks)) {
-              console.error("Networks is not an array:", networks);
+              console.error("Invalid networks data, not an array:", networks);
               statusDiv.textContent = "Invalid network data received";
               statusDiv.className = "status error";
               statusDiv.style.display = "block";
               return;
             }
 
-            networks.forEach((network) => {
+            if (networks.length === 0) {
+              console.log("No networks to display");
+              statusDiv.textContent = "No networks available";
+              statusDiv.className = "status";
+              statusDiv.style.display = "block";
+              networkListDiv.style.display = "none";
+              return;
+            }
+
+            networks.forEach((network, index) => {
               if (!network || typeof network.ssid !== "string") {
-                console.warn("Invalid network object:", network);
+                console.warn(
+                  `Invalid network object at index ${index}:`,
+                  network
+                );
                 return;
               }
 
@@ -619,21 +641,14 @@
               let signalText = "Unknown";
               let signalNumber = parseInt(network.signal);
 
-              // For dBm values (negative numbers)
-              if (signalNumber < 0) {
-                if (signalNumber > -50) signalText = "Strong";
-                else if (signalNumber > -70) signalText = "Medium";
-                else signalText = "Weak";
-              }
-              // For percentage values or text
-              else if (!isNaN(signalNumber)) {
+              // Handle percentage values (as seen in your JSON)
+              if (!isNaN(signalNumber)) {
                 if (signalNumber > 70) signalText = "Strong";
                 else if (signalNumber > 40) signalText = "Medium";
                 else signalText = "Weak";
               } else {
-                signalText = network.signal; // Use as-is if already text
+                signalText = network.signal; // Use as-is if not numeric
               }
-              const li = document.createElement("li");
 
               const signalColor =
                 signalText === "Strong"
@@ -642,6 +657,7 @@
                   ? "#ff9800"
                   : "#f44336";
 
+              const li = document.createElement("li");
               li.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span>${network.ssid}</span>
@@ -655,7 +671,7 @@
                 const event = new Event("input", { bubbles: true });
                 ssidInput.dispatchEvent(event);
 
-                // Trigger change event to to check saved password and clear if none exists
+                // Trigger change event to check saved password
                 const changeEvent = new Event("change", { bubbles: true });
                 ssidInput.dispatchEvent(changeEvent);
 
@@ -669,21 +685,16 @@
               networkListItems.appendChild(li);
             });
 
-            networkListDiv.style.display =
-              networks.length > 0 ? "block" : "none";
-            if (networks.length === 0) {
-              statusDiv.textContent = "No networks available to display";
-              statusDiv.className = "status";
-              statusDiv.style.display = "block";
-            }
+            networkListDiv.style.display = "block";
+            console.log("Network list rendered with", networks.length, "items");
           }
 
-          // Try to use the actual scan function, falling back to simulation if needed
+          // Start the scan
           try {
             scanNetworks();
           } catch (error) {
-            console.error("Error initiating network scan:", error);
-            statusDiv.textContent = "Error starting network scan";
+            console.error("Error starting network scan:", error);
+            statusDiv.textContent = "Error initiating network scan";
             statusDiv.className = "status error";
             statusDiv.style.display = "block";
             simulateNetworks();
@@ -691,12 +702,11 @@
         });
 
         function saveWifiConfig(config) {
-          // This function sends the configuration to the Raspberry Pi
+          console.log("Saving WiFi config:", config);
           statusDiv.textContent = "Saving WiFi configuration...";
           statusDiv.className = "status";
           statusDiv.style.display = "block";
 
-          // Actual implementation to save to NetworkManager
           const xhr = new XMLHttpRequest();
           xhr.open("POST", "save-wifi.php", true);
           xhr.setRequestHeader("Content-Type", "application/json");
@@ -706,8 +716,8 @@
               if (xhr.status === 200) {
                 try {
                   const response = JSON.parse(xhr.responseText);
+                  console.log("Save config response:", response);
                   if (response.success) {
-                    // Display the message from the server if available
                     if (response.details && response.details.message) {
                       statusDiv.textContent = response.details.message;
                     } else {
@@ -721,7 +731,6 @@
                     }
                     statusDiv.className = "status success";
 
-                    // If reboot was selected, show countdown
                     if (config.reboot) {
                       let countdown = 5;
                       const interval = setInterval(() => {
@@ -741,22 +750,30 @@
                     statusDiv.className = "status error";
                   }
                 } catch (e) {
+                  console.error(
+                    "Error parsing save response:",
+                    e,
+                    xhr.responseText
+                  );
                   statusDiv.textContent = "Error parsing response from server";
                   statusDiv.className = "status error";
-                  console.error("Response parse error:", e, xhr.responseText);
                 }
               } else {
+                console.error(
+                  "Save request failed, status:",
+                  xhr.status,
+                  xhr.responseText
+                );
                 statusDiv.textContent = "Server error: " + xhr.status;
                 statusDiv.className = "status error";
-                console.error("Server error:", xhr.status, xhr.responseText);
               }
             }
           };
 
           xhr.onerror = function () {
+            console.error("Network error while saving config");
             statusDiv.textContent = "Network error while saving configuration";
             statusDiv.className = "status error";
-            console.error("Network error while saving");
           };
 
           xhr.send(JSON.stringify(config));
