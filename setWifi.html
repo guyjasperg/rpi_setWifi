@@ -488,6 +488,7 @@
 
           // Function to scan networks using XHR GET request
           function scanNetworks() {
+            console.log("Initiating network scan...");
             const xhr = new XMLHttpRequest();
             xhr.open("GET", "scan-networks.php", true);
 
@@ -497,6 +498,10 @@
                 scanButton.textContent = "Scan Networks";
 
                 if (xhr.status === 200) {
+                  console.log(
+                    "Received response from scan-networks.php:",
+                    xhr.responseText
+                  );
                   try {
                     // Check if the response starts with <?php (indicating PHP isn't executing)
                     if (xhr.responseText.trim().startsWith("<?php")) {
@@ -512,11 +517,17 @@
                     }
 
                     const networks = JSON.parse(xhr.responseText);
-                    if (networks && networks.length > 0) {
+                    console.log("Parsed networks:", networks);
+                    if (
+                      networks &&
+                      Array.isArray(networks) &&
+                      networks.length > 0
+                    ) {
                       displayNetworks(networks);
                     } else {
-                      // If no networks found, show message and fall back to simulation
-                      console.log("No networks found, using simulated data");
+                      console.log(
+                        "No networks found or invalid response, using simulated data"
+                      );
                       statusDiv.textContent = "No WiFi networks found";
                       statusDiv.className = "status";
                       statusDiv.style.display = "block";
@@ -525,16 +536,23 @@
                   } catch (error) {
                     console.error(
                       "Error parsing network scan response:",
-                      error
+                      error,
+                      "Raw response:",
+                      xhr.responseText
                     );
-                    console.error("Raw response:", xhr.responseText);
-                    statusDiv.textContent = "Error parsing server response";
+                    statusDiv.textContent =
+                      "Error processing network scan results";
                     statusDiv.className = "status error";
                     statusDiv.style.display = "block";
                     simulateNetworks();
                   }
                 } else {
-                  console.error("Error scanning networks, status:", xhr.status);
+                  console.error(
+                    "Error scanning networks, status:",
+                    xhr.status,
+                    "Response:",
+                    xhr.responseText
+                  );
                   statusDiv.textContent = "Server error: " + xhr.status;
                   statusDiv.className = "status error";
                   statusDiv.style.display = "block";
@@ -581,8 +599,22 @@
 
           // Display networks in the UI
           function displayNetworks(networks) {
+            console.log("Displaying networks:", networks);
             networkListItems.innerHTML = "";
+            if (!Array.isArray(networks)) {
+              console.error("Networks is not an array:", networks);
+              statusDiv.textContent = "Invalid network data received";
+              statusDiv.className = "status error";
+              statusDiv.style.display = "block";
+              return;
+            }
+
             networks.forEach((network) => {
+              if (!network || typeof network.ssid !== "string") {
+                console.warn("Invalid network object:", network);
+                return;
+              }
+
               // Convert signal strength to text
               let signalText = "Unknown";
               let signalNumber = parseInt(network.signal);
@@ -623,7 +655,7 @@
                 const event = new Event("input", { bubbles: true });
                 ssidInput.dispatchEvent(event);
 
-                // Trigger change event to check saved password and clear if none exists
+                // Trigger change event to to check saved password and clear if none exists
                 const changeEvent = new Event("change", { bubbles: true });
                 ssidInput.dispatchEvent(changeEvent);
 
@@ -637,14 +669,23 @@
               networkListItems.appendChild(li);
             });
 
-            networkListDiv.style.display = "block";
+            networkListDiv.style.display =
+              networks.length > 0 ? "block" : "none";
+            if (networks.length === 0) {
+              statusDiv.textContent = "No networks available to display";
+              statusDiv.className = "status";
+              statusDiv.style.display = "block";
+            }
           }
 
           // Try to use the actual scan function, falling back to simulation if needed
           try {
             scanNetworks();
           } catch (error) {
-            console.error("Error scanning networks:", error);
+            console.error("Error initiating network scan:", error);
+            statusDiv.textContent = "Error starting network scan";
+            statusDiv.className = "status error";
+            statusDiv.style.display = "block";
             simulateNetworks();
           }
         });
