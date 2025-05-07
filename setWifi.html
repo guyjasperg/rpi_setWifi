@@ -100,7 +100,6 @@
         background: transparent;
       }
 
-      /* This is the key fix - properly position and style the label when focused or filled */
       .form-control:focus + .form-label,
       .form-control:not(:placeholder-shown) + .form-label {
         top: 4px;
@@ -187,7 +186,6 @@
         box-shadow: none;
       }
 
-      /* WiFi Icon */
       .wifi-icon {
         position: relative;
         width: 24px;
@@ -233,7 +231,6 @@
         background-color: var(--primary-light);
       }
 
-      /* Password toggle button styles */
       .password-container {
         position: relative;
       }
@@ -258,7 +255,6 @@
         color: var(--primary-color);
       }
 
-      /* Eye icons for password visibility */
       .eye-icon {
         width: 22px;
         height: 16px;
@@ -448,9 +444,19 @@
                   setTimeout(() => {
                     statusDiv.style.display = "none";
                   }, 3000);
+                } else {
+                  // Clear password field if no saved password is found
+                  passwordInput.value = "";
+                  // Trigger input event to update the label
+                  const event = new Event("input", { bubbles: true });
+                  passwordInput.dispatchEvent(event);
                 }
               } catch (e) {
                 console.error("Error parsing saved password response:", e);
+                // Clear password field on error to be safe
+                passwordInput.value = "";
+                const event = new Event("input", { bubbles: true });
+                passwordInput.dispatchEvent(event);
               }
             }
           };
@@ -617,8 +623,9 @@
                 const event = new Event("input", { bubbles: true });
                 ssidInput.dispatchEvent(event);
 
-                // Try to get the saved password
-                checkSavedPassword(network.ssid);
+                // Trigger change event to check saved password and clear if none exists
+                const changeEvent = new Event("change", { bubbles: true });
+                ssidInput.dispatchEvent(changeEvent);
 
                 // Focus on password
                 passwordInput.focus();
