@@ -66,6 +66,10 @@ try {
         exit;
     }
     
+    // Log current connections before modifications
+    exec("sudo nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show", $initial_connections, $initial_return);
+    logMessage("Initial connections:\n" . implode("\n", $initial_connections));
+    
     // Properly escape values for shell commands
     $ssid_escaped = escapeshellarg($ssid);
     $password_escaped = escapeshellarg($password);
@@ -76,14 +80,29 @@ try {
     exec("sudo nmcli connection delete $connection_name_escaped 2>&1", $delete_output, $delete_return);
     logMessage("Delete existing connection '$connection_name': " . implode("\n", $delete_output));
     
+    // Disable autoconnect for all other WiFi connections
+    exec("sudo nmcli -t -f NAME,TYPE connection show", $all_connections, $conn_return);
+    foreach ($all_connections as $conn) {
+        $parts = explode(':', $conn);
+        $conn_name = $parts[0];
+        $conn_type = $parts[1] ?? '';
+        if ($conn_name !== $connection_name && ($conn_type === '802-11-wireless' || strpos($conn_name, 'WiFi-') === 0 || $conn_name === 'preconfigured')) {
+            $conn_name_escaped = escapeshellarg($conn_name);
+            exec("sudo nmcli connection modify $conn_name_escaped connection.autoconnect no 2>&1", $modify_output, $modify_return);
+            logMessage("Disabled autoconnect for '$conn_name' (type: $conn_type): " . implode("\n", $modify_output) . ", Return code: $modify_return");
+        }
+    }
+    
     // Build the nmcli command
     if (!empty($password)) {
         // For secured networks
         $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name $connection_name_escaped autoconnect yes ssid $ssid_escaped";
         $cmd .= " wifi-sec.key-mgmt wpa-psk wifi-sec.psk $password_escaped";
+        $cmd .= " connection.autoconnect-priority 100"; // High priority
     } else {
         // For open networks
         $cmd = "sudo nmcli connection add type wifi ifname wlan0 con-name $connection_name_escaped autoconnect yes ssid $ssid_escaped";
+        $cmd .= " connection.autoconnect-priority 100"; // High priority
     }
     
     // Add hidden network setting if needed
@@ -120,12 +139,21 @@ try {
         exit;
     }
     
-    // If reboot is not requested, try to bring up the connection
-    if (!$reboot) {
-        exec("sudo nmcli connection up $connection_name_escaped 2>&1", $up_output, $up_return);
-        logMessage("Bringing up connection '$connection_name': " . implode("\n", $up_output) . ", Return code: $up_return");
-        // Note: We don't fail if connection up fails, as it may connect on reboot
+    // Attempt to activate the connection
+    $connect_output_text = "";
+    exec("sudo nmcli connection up $connection_name_escaped 2>&1", $up_output, $up_return);
+    $connect_output_text = implode("\n", $up_output);
+    logMessage("Activating connection '$connection_name': $connect_output_text, Return code: $up_return");
+    if ($up_return !== 0) {
+        $connect_output_text = "Connection will be attempted on reboot due to activation failure: $connect_output_text";
+        logMessage("Warning: Failed to activate connection immediately");
     }
+    
+    // Log final connection state
+    exec("sudo nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show", $final_connections, $final_return);
+    logMessage("Final connections:\n" . implode("\n", $final_connections));
+    exec("sudo nmcli -t -f DEVICE,STATE,CON-NAME device status 2>&1", $status_output, $status_return);
+    logMessage("Final device status: " . implode("\n", $status_output));
     
     // Save the password if requested
     $password_saved = false;
@@ -146,10 +174,11 @@ try {
         'details' => [
             'connection_name' => $connection_name,
             'connection_result' => $output_text,
+            'connect_result' => $connect_output_text,
             'password_saved' => $password_saved,
             'message' => $reboot ? 
                 'WiFi configuration saved. Your Raspberry Pi will reboot to apply changes.' : 
-                'WiFi configuration saved. Changes will be applied after next reboot.'
+                'WiFi configuration saved and activated. If not connected, changes will apply after reboot.'
         ]
     ]);
 } catch (Exception $e) {
