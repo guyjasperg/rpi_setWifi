@@ -6,14 +6,28 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
+// Define log file
+define('LOG_FILE', '/var/log/wifi-setup.log');
+
+// Logging function
+function logMessage($message) {
+    $timestamp = date('Y-m-d H:i:s');
+    $logEntry = "[$timestamp] $message\n";
+    // Use sudo to ensure we can write to the log file
+    exec("echo " . escapeshellarg($logEntry) . " | sudo tee -a " . escapeshellarg(LOG_FILE) . " > /dev/null 2>&1");
+}
+
 // Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    logMessage("Received OPTIONS request");
     exit(0);
 }
 
 // Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'Only POST method is allowed']);
+    $error = 'Only POST method is allowed';
+    logMessage("Error: $error");
+    echo json_encode(['success' => false, 'message' => $error]);
     exit;
 }
 
@@ -23,7 +37,9 @@ $data = json_decode($input, true);
 
 // Validate input
 if (!isset($data['ssid']) || empty($data['ssid'])) {
-    echo json_encode(['success' => false, 'message' => 'SSID is required']);
+    $error = 'SSID is required';
+    logMessage("Error: $error");
+    echo json_encode(['success' => false, 'message' => $error]);
     exit;
 }
 
@@ -37,12 +53,16 @@ $saveCredentials = isset($data['saveCredentials']) ? $data['saveCredentials'] : 
 // Define the file to store WiFi passwords
 $passwordFile = '/etc/rpi-wifi-passwords.json';
 
+logMessage("Processing WiFi config for SSID: $ssid, Hidden: $hidden, Reboot: " . ($reboot ? 'yes' : 'no') . ", SaveCredentials: " . ($saveCredentials ? 'yes' : 'no'));
+
 // Create NetworkManager connection
 try {
     // Check if NetworkManager is installed and running
     exec("which nmcli", $which_output, $which_return);
     if ($which_return !== 0) {
-        echo json_encode(['success' => false, 'message' => 'NetworkManager (nmcli) not found']);
+        $error = 'NetworkManager (nmcli) not found';
+        logMessage("Error: $error");
+        echo json_encode(['success' => false, 'message' => $error]);
         exit;
     }
     
@@ -53,7 +73,8 @@ try {
     $connection_name_escaped = escapeshellarg($connection_name);
     
     // Delete existing connection with same name to avoid duplicates
-    exec("sudo nmcli connection delete $connection_name_escaped 2>/dev/null");
+    exec("sudo nmcli connection delete $connection_name_escaped 2>&1", $delete_output, $delete_return);
+    logMessage("Delete existing connection '$connection_name': " . implode("\n", $delete_output));
     
     // Build the nmcli command
     if (!empty($password)) {
@@ -73,43 +94,68 @@ try {
     // Execute command with full output capture
     exec($cmd . " 2>&1", $output, $return_var);
     $output_text = implode("\n", $output);
+    logMessage("Executing nmcli command: $cmd");
+    logMessage("nmcli output: $output_text, Return code: $return_var");
     
     if ($return_var !== 0) {
+        $error = 'Failed to create NetworkManager connection: ' . $output_text;
+        logMessage("Error: $error");
         echo json_encode([
             'success' => false, 
-            'message' => 'Failed to create NetworkManager connection: ' . $output_text
+            'message' => $error
         ]);
         exit;
     }
     
-    // Save the password if requested
-    if ($saveCredentials && !empty($password)) {
-        saveWifiPassword($ssid, $password, $passwordFile);
+    // Verify the connection was added
+    exec("sudo nmcli connection show $connection_name_escaped 2>&1", $verify_output, $verify_return);
+    logMessage("Verify connection '$connection_name': " . implode("\n", $verify_output));
+    if ($verify_return !== 0) {
+        $error = 'Failed to verify NetworkManager connection: ' . implode("\n", $verify_output);
+        logMessage("Error: $error");
+        echo json_encode([
+            'success' => false, 
+            'message' => $error
+        ]);
+        exit;
     }
     
-    // Do not connect immediately - changes will be applied after reboot
-    $connect_output_text = "WiFi configuration saved. Changes will be applied after reboot.";
-    $connect_return = 0;
+    // If reboot is not requested, try to bring up the connection
+    if (!$reboot) {
+        exec("sudo nmcli connection up $connection_name_escaped 2>&1", $up_output, $up_return);
+        logMessage("Bringing up connection '$connection_name': " . implode("\n", $up_output) . ", Return code: $up_return");
+        // Note: We don't fail if connection up fails, as it may connect on reboot
+    }
+    
+    // Save the password if requested
+    $password_saved = false;
+    if ($saveCredentials && !empty($password)) {
+        $password_saved = saveWifiPassword($ssid, $password, $passwordFile);
+        logMessage("Password save for SSID '$ssid': " . ($password_saved ? 'Success' : 'Failed'));
+    }
     
     // If reboot is requested, schedule a reboot
     if ($reboot) {
         // Use nohup to ensure the reboot happens even if the HTTP connection is closed
         exec('nohup sudo /bin/sh -c "sleep 5 && reboot" > /dev/null 2>&1 &');
+        logMessage("Scheduled reboot in 5 seconds");
     }
     
     echo json_encode([
         'success' => true,
         'details' => [
             'connection_name' => $connection_name,
-            'connection_result' => $connect_output_text,
-            'password_saved' => $saveCredentials && !empty($password),
+            'connection_result' => $output_text,
+            'password_saved' => $password_saved,
             'message' => $reboot ? 
                 'WiFi configuration saved. Your Raspberry Pi will reboot to apply changes.' : 
                 'WiFi configuration saved. Changes will be applied after next reboot.'
         ]
     ]);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    $error = 'Exception: ' . $e->getMessage();
+    logMessage("Error: $error");
+    echo json_encode(['success' => false, 'message' => $error]);
 }
 
 /**
@@ -124,10 +170,16 @@ function saveWifiPassword($ssid, $password, $file) {
     // Read existing passwords
     $passwords = [];
     if (file_exists($file)) {
-        $jsonContent = file_get_contents($file);
-        if ($jsonContent) {
+        exec("sudo cat " . escapeshellarg($file) . " 2>&1", $read_output, $read_return);
+        if ($read_return === 0) {
+            $jsonContent = implode("\n", $read_output);
             $passwords = json_decode($jsonContent, true) ?: [];
+            logMessage("Read existing passwords from $file: " . ($jsonContent ? 'Success' : 'Empty'));
+        } else {
+            logMessage("Failed to read $file: " . implode("\n", $read_output));
         }
+    } else {
+        logMessage("Password file $file does not exist, will attempt to create");
     }
     
     // Update password for this SSID
@@ -138,19 +190,30 @@ function saveWifiPassword($ssid, $password, $file) {
     if (!is_dir($directory)) {
         // If file is directly in /etc, we don't need to create the directory
         if ($directory !== '/etc') {
-            mkdir($directory, 0755, true);
+            exec("sudo mkdir -p " . escapeshellarg($directory) . " 2>&1", $mkdir_output, $mkdir_return);
+            logMessage("Creating directory $directory: " . implode("\n", $mkdir_output) . ", Return code: $mkdir_return");
+            if ($mkdir_return !== 0) {
+                logMessage("Failed to create directory $directory");
+                return false;
+            }
         }
     }
     
-    // Write back to file
-    $success = file_put_contents($file, json_encode($passwords, JSON_PRETTY_PRINT));
+    // Write back to file using sudo
+    $jsonData = json_encode($passwords, JSON_PRETTY_PRINT);
+    $tempFile = tempnam(sys_get_temp_dir(), 'wifi');
+    file_put_contents($tempFile, $jsonData);
+    exec("sudo mv " . escapeshellarg($tempFile) . " " . escapeshellarg($file) . " 2>&1", $mv_output, $mv_return);
+    logMessage("Writing passwords to $file: " . implode("\n", $mv_output) . ", Return code: $mv_return");
     
     // Set proper permissions for security
-    if ($success) {
-        chmod($file, 0600); // Only readable/writable by owner
-        exec("sudo chown root:root " . escapeshellarg($file));
+    if ($mv_return === 0) {
+        exec("sudo chmod 0600 " . escapeshellarg($file) . " 2>&1", $chmod_output, $chmod_return);
+        exec("sudo chown root:root " . escapeshellarg($file) . " 2>&1", $chown_output, $chown_return);
+        logMessage("Set permissions on $file: chmod Return code: $chmod_return, chown Return code: $chown_return");
+        return true;
     }
     
-    return $success !== false;
+    return false;
 }
 ?>
